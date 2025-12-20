@@ -89,9 +89,22 @@ app.post('/processos/:id/log', async (req, res) => {
   res.status(201).json(data);
 });
 
+// Listar processos de eliminação
+app.get('/processos', async (req, res) => {
+  const { data, error } = await supabase
+    .from('elimination_processes')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+
 // INICIAR SERVIDOR
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 
 });
+
