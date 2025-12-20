@@ -6,7 +6,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use(cors({ origin: '*' }));
 
 // CONEXÃO COM O BANCO (SUPABASE)
 // O Render vai ler essas variáveis das configurações que faremos lá
@@ -93,4 +93,5 @@ app.post('/processos/:id/log', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
+
 });
