@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
+const { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } = require('docx');
 
 const app = express();
 app.use(express.json());
@@ -100,6 +101,82 @@ app.get('/processos', async (req, res) => {
   res.json(data);
 });
 
+// ROTA PARA GERAR O WORD (DOCX)
+app.post('/processos/:id/ata-word', async (req, res) => {
+    try {
+        const { boxes_eliminated, diary_number } = req.body;
+
+        // 1. Criação do Documento
+        const doc = new Document({
+            sections: [{
+                properties: {},
+                children: [
+                    // Título
+                    new Paragraph({
+                        text: "ATA DE ELIMINAÇÃO DE DOCUMENTOS",
+                        heading: HeadingLevel.HEADING_1,
+                        alignment: AlignmentType.CENTER,
+                        spacing: { after: 300 },
+                    }),
+                    
+                    // Data e Processo
+                    new Paragraph({
+                        children: [
+                            new TextRun({ text: "Data de Emissão: ", bold: true }),
+                            new TextRun({ text: new Date().toLocaleDateString() }),
+                        ],
+                        spacing: { after: 100 },
+                    }),
+                    new Paragraph({
+                        children: [
+                            new TextRun({ text: "Diário Oficial / Processo: ", bold: true }),
+                            new TextRun({ text: diary_number }),
+                        ],
+                        spacing: { after: 300 },
+                    }),
+
+                    // Texto legal
+                    new Paragraph({
+                        text: "Certificamos para os devidos fins que foram eliminadas, conforme procedimentos legais de gestão documental, as caixas/boxes listadas abaixo:",
+                        alignment: AlignmentType.JUSTIFIED,
+                        spacing: { after: 200 },
+                    }),
+
+                    // A Lista de Caixas (Destaque)
+                    new Paragraph({
+                        text: boxes_eliminated,
+                        bold: true,
+                        alignment: AlignmentType.CENTER,
+                        spacing: { before: 200, after: 400 },
+                    }),
+
+                    // Assinatura
+                    new Paragraph({
+                        text: "_______________________________________________",
+                        alignment: AlignmentType.CENTER,
+                        spacing: { before: 800 },
+                    }),
+                    new Paragraph({
+                        text: "Responsável pela Eliminação",
+                        alignment: AlignmentType.CENTER,
+                    }),
+                ],
+            }],
+        });
+
+        // 2. Gerar o Buffer (o arquivo na memória)
+        const buffer = await Packer.toBuffer(doc);
+
+        // 3. Enviar para o navegador baixar
+        res.setHeader('Content-Disposition', 'attachment; filename=Ata_Eliminacao.docx');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        res.send(buffer);
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Erro ao gerar documento Word" });
+    }
+});
 
 // INICIAR SERVIDOR
 const PORT = process.env.PORT || 3000;
@@ -107,4 +184,5 @@ app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 
 });
+
 
