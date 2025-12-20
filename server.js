@@ -150,7 +150,7 @@ app.post('/processos/:id/ata-word', async (req, res) => {
                             new TextRun({ text: funcionario, bold: true }),
                             new TextRun({ text: `. Foram eliminados os boxes nº: ` }),
                             new TextRun({ text: boxes_eliminated, bold: true }),
-                            new TextRun({ text: `, tendo como testemunhas as demais pessoas do setor. Sem mais.` }),
+                            new TextRun({ text: ` , tendo como testemunhas as demais pessoas do setor. Sem mais.` }),
                         ],
                     }),
 
@@ -186,6 +186,7 @@ app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 
 });
+
 
 
 
