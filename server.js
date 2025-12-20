@@ -102,72 +102,74 @@ app.get('/processos', async (req, res) => {
 });
 
 // ROTA PARA GERAR O WORD (DOCX)
+// --- AUXILIAR: DATA POR EXTENSO ---
+function getDataPorExtenso() {
+    const hoje = new Date();
+    const dias = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove", "dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove", "vinte", "vinte e um", "vinte e dois", "vinte e três", "vinte e quatro", "vinte e cinco", "vinte e seis", "vinte e sete", "vinte e oito", "vinte e nove", "trinta", "trinta e um"];
+    const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+    
+    const dia = dias[hoje.getDate()];
+    const mes = meses[hoje.getMonth()];
+    const ano = hoje.getFullYear(); // Para simplificar, deixei o ano numérico, mas pode ser extenso se necessário
+    
+    return `Aos ${dia} dias do mês de ${mes} de ${ano}`;
+}
+
+// ROTA PARA GERAR O WORD (DOCX) - ATUALIZADA
 app.post('/processos/:id/ata-word', async (req, res) => {
     try {
-        const { boxes_eliminated, diary_number } = req.body;
+        const { boxes_eliminated, diary_number, funcionario, planilha, data_diario, paginas } = req.body;
+        
+        // Texto dinâmico da data de hoje
+        const inicioData = getDataPorExtenso();
 
-        // 1. Criação do Documento
         const doc = new Document({
             sections: [{
                 properties: {},
                 children: [
-                    // Título
+                    // TÍTULO (Opcional, se quiser tirar é só remover esse bloco)
                     new Paragraph({
-                        text: "ATA DE ELIMINAÇÃO DE DOCUMENTOS",
+                        text: "ATA DE ELIMINAÇÃO",
                         heading: HeadingLevel.HEADING_1,
                         alignment: AlignmentType.CENTER,
-                        spacing: { after: 300 },
-                    }),
-                    
-                    // Data e Processo
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "Data de Emissão: ", bold: true }),
-                            new TextRun({ text: new Date().toLocaleDateString() }),
-                        ],
-                        spacing: { after: 100 },
-                    }),
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "Diário Oficial / Processo: ", bold: true }),
-                            new TextRun({ text: diary_number }),
-                        ],
-                        spacing: { after: 300 },
+                        spacing: { after: 400 },
                     }),
 
-                    // Texto legal
+                    // O TEXTO OFICIAL (Parágrafo único justificado)
                     new Paragraph({
-                        text: "Certificamos para os devidos fins que foram eliminadas, conforme procedimentos legais de gestão documental, as caixas/boxes listadas abaixo:",
                         alignment: AlignmentType.JUSTIFIED,
-                        spacing: { after: 200 },
+                        lineSpacing: 360, // Espaçamento 1.5
+                        children: [
+                            new TextRun({ text: `${inicioData}, nas dependências do Arquivo Central/SEC, iniciamos o processo de eliminação/fragmentação de documentos referentes à planilha de eliminação nº ` }),
+                            new TextRun({ text: planilha, bold: true }),
+                            new TextRun({ text: `, publicada no Diário do Município, antigo Boletim do Município, nº ${diary_number} de ` }),
+                            new TextRun({ text: data_diario }),
+                            new TextRun({ text: `, páginas ` }),
+                            new TextRun({ text: paginas }),
+                            new TextRun({ text: `. A eliminação de documentos foi realizada por ` }),
+                            new TextRun({ text: funcionario, bold: true }),
+                            new TextRun({ text: `. Foram eliminados os boxes nº: ` }),
+                            new TextRun({ text: boxes_eliminated, bold: true }),
+                            new TextRun({ text: ` tendo como testemunhas as demais pessoas do setor. Sem mais.` }),
+                        ],
                     }),
 
-                    // A Lista de Caixas (Destaque)
-                    new Paragraph({
-                        text: boxes_eliminated,
-                        bold: true,
-                        alignment: AlignmentType.CENTER,
-                        spacing: { before: 200, after: 400 },
-                    }),
-
-                    // Assinatura
+                    // ASSINATURA (Para ficar profissional)
                     new Paragraph({
                         text: "_______________________________________________",
                         alignment: AlignmentType.CENTER,
-                        spacing: { before: 800 },
+                        spacing: { before: 1000 },
                     }),
                     new Paragraph({
-                        text: "Responsável pela Eliminação",
+                        text: funcionario,
                         alignment: AlignmentType.CENTER,
                     }),
                 ],
             }],
         });
 
-        // 2. Gerar o Buffer (o arquivo na memória)
         const buffer = await Packer.toBuffer(doc);
 
-        // 3. Enviar para o navegador baixar
         res.setHeader('Content-Disposition', 'attachment; filename=Ata_Eliminacao.docx');
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
         res.send(buffer);
@@ -184,5 +186,6 @@ app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 
 });
+
 
 
