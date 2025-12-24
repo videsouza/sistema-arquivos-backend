@@ -47,6 +47,21 @@ app.post('/planilhas', async (req, res) => {
   res.status(201).json(data);
 });
 
+// --- NOVA ROTA: ALTERAR STATUS ---
+app.patch('/planilhas/:id/status', async (req, res) => {
+    const { status } = req.body;
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+        .from('document_batches')
+        .update({ status: status })
+        .eq('id', id)
+        .select();
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
 // --- NOVO: UPLOAD DE ARQUIVO (VERSÃO) ---
 app.post('/planilhas/:id/upload', upload.single('arquivo'), async (req, res) => {
     try {
@@ -235,3 +250,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
