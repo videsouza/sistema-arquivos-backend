@@ -3,231 +3,123 @@ const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } = require('docx');
-const multer = require('multer'); // NOVA IMPORTAÇÃO
 
 const app = express();
 app.use(express.json());
-// CORS liberado para qualquer origem (facilita o teste)
-app.use(cors({ origin: '*' }));
+app.use(cors({ origin: '*' })); // Permite conexões de qualquer lugar
 
 // CONEXÃO COM O BANCO (SUPABASE)
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
 
-// CONFIGURAÇÃO DE UPLOAD (MULTER)
-// Isso permite receber arquivos na memória temporária antes de enviar pro Supabase
-const upload = multer({ storage: multer.memoryStorage() });
-
-// ROTA DE TESTE
-app.get('/', (req, res) => {
-  res.send('Servidor de Arquivo Funcionando! 🚀');
-});
-
-// --- MÓDULO 1: PLANILHAS (INVENTÁRIO) ---
-
-app.get('/planilhas', async (req, res) => {
-  const { data, error } = await supabase
-    .from('document_batches')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
-});
-
-app.post('/planilhas', async (req, res) => {
-  const { title, type, file_url } = req.body;
-  const { data, error } = await supabase
-    .from('document_batches')
-    .insert([{ title, type, file_url }])
-    .select();
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.status(201).json(data);
-});
-
-// --- NOVA ROTA: ALTERAR STATUS ---
-app.patch('/planilhas/:id/status', async (req, res) => {
-    const { status } = req.body;
-    const { id } = req.params;
-
-    const { data, error } = await supabase
-        .from('document_batches')
-        .update({ status: status })
-        .eq('id', id)
-        .select();
-
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
-});
-
-// --- NOVO: UPLOAD DE ARQUIVO (VERSÃO) ---
-app.post('/planilhas/:id/upload', upload.single('arquivo'), async (req, res) => {
-    try {
-        const batchId = req.params.id;
-        const file = req.file; 
-
-        if (!file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
-
-        // 1. Descobrir próxima versão
-        const { data: existingVersions } = await supabase
-            .from('batch_versions')
-            .select('version_number')
-            .eq('batch_id', batchId)
-            .order('version_number', { ascending: false })
-            .limit(1);
-
-        const nextVersion = (existingVersions && existingVersions.length > 0) 
-            ? existingVersions[0].version_number + 1 
-            : 1;
-
-        // 2. Definir nome e caminho
-        // Remove caracteres especiais para evitar erro
-        const cleanName = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
-        const filePath = `${batchId}/v${nextVersion}_${cleanName}`;
-
-        // 3. Enviar para o Supabase Storage
-        const { error: uploadError } = await supabase
-            .storage
-            .from('arquivos')
-            .upload(filePath, file.buffer, {
-                contentType: file.mimetype
-            });
-
-        if (uploadError) throw uploadError;
-
-        // 4. Salvar registro na tabela
-        const { data, error: dbError } = await supabase
-            .from('batch_versions')
-            .insert([{
-                batch_id: batchId,
-                version_number: nextVersion,
-                file_path: filePath,
-                file_name: file.originalname
-            }])
-            .select();
-
-        if (dbError) throw dbError;
-
-        res.status(201).json(data);
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// --- NOVO: LISTAR VERSÕES ---
-app.get('/planilhas/:id/versoes', async (req, res) => {
-    const { data, error } = await supabase
-        .from('batch_versions')
-        .select('*')
-        .eq('batch_id', req.params.id)
-        .order('version_number', { ascending: false });
-
-    if (error) return res.status(500).json({ error: error.message });
-    
-    // Gerar link de download para cada versão
-    const versionsWithUrl = data.map(v => {
-        const { data: publicUrl } = supabase.storage.from('arquivos').getPublicUrl(v.file_path);
-        return { ...v, url: publicUrl.publicUrl };
-    });
-
-    res.json(versionsWithUrl);
-});
-
-// --- MÓDULO 2: PROCESSO DE ELIMINAÇÃO ---
-
-app.get('/processos', async (req, res) => {
-  const { data, error } = await supabase
-    .from('elimination_processes')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
-});
-
-app.post('/processos', async (req, res) => {
-  const { diary_number, total_boxes, description } = req.body;
-  const { data, error } = await supabase
-    .from('elimination_processes')
-    .insert([{ diary_number, total_boxes, description }])
-    .select();
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.status(201).json(data);
-});
-
-app.post('/processos/:id/log', async (req, res) => {
-  const { boxes_eliminated } = req.body;
-  const processId = req.params.id;
-
-  const { data: processData } = await supabase
-    .from('elimination_processes')
-    .select('diary_number')
-    .eq('id', processId)
-    .single();
-
-  const textoAta = `ATA DE ELIMINAÇÃO - Processo ${processData.diary_number} - Caixas: ${boxes_eliminated}`;
-
-  const { data, error } = await supabase
-    .from('elimination_logs')
-    .insert([{ 
-      process_id: processId, 
-      boxes_eliminated, 
-      ata_content: textoAta 
-    }])
-    .select();
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.status(201).json(data);
-});
-
-// --- AUXILIAR: DATA POR EXTENSO ---
-function getDataPorExtenso() {
-    const hoje = new Date();
-    const dias = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove", "dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove", "vinte", "vinte e um", "vinte e dois", "vinte e três", "vinte e quatro", "vinte e cinco", "vinte e seis", "vinte e sete", "vinte e oito", "vinte e nove", "trinta", "trinta e um"];
-    const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-    
-    return `Aos ${dias[hoje.getDate()]} dias do mês de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
+// Verifica se as chaves existem (Evita crash no Render se esquecer de configurar)
+if (!supabaseUrl || !supabaseKey) {
+    console.error("ERRO CRÍTICO: SUPABASE_URL ou SUPABASE_KEY não configurados.");
 }
 
-// --- GERAR WORD (DOCX) ---
+const supabase = createClient(supabaseUrl || '', supabaseKey || '');
+
+// ROTA DE SAÚDE (Para checar se o servidor acordou)
+app.get('/', (req, res) => {
+  res.send({ status: 'Online', service: 'Hub.Doc API' });
+});
+
+// --- ROTAS DE PROCESSOS (FLUXO) ---
+
+// 1. Listar Processos
+app.get('/processos', async (req, res) => {
+  const { data, error } = await supabase
+    .from('processos_eliminacao')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// 2. Criar Processo
+app.post('/processos', async (req, res) => {
+  const { numero_processo, link_planilha, status } = req.body;
+  const { data, error } = await supabase
+    .from('processos_eliminacao')
+    .insert([{ numero_processo, link_planilha, status }])
+    .select();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json(data);
+});
+
+// 3. Atualizar Status
+app.put('/processos/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  
+  const { data, error } = await supabase
+    .from('processos_eliminacao')
+    .update({ status })
+    .eq('id', id)
+    .select();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// 4. Gerar ATA em Word (.docx)
 app.post('/processos/:id/ata-word', async (req, res) => {
     try {
-        const { boxes_eliminated, diary_number, funcionario, planilha, data_diario, paginas } = req.body;
-        const inicioData = getDataPorExtenso();
+        const { id } = req.params;
+        const { 
+            boxes_eliminated, diary_number, funcionario, 
+            planilha, data_diario, paginas 
+        } = req.body;
 
+        // Atualiza o banco com o log da eliminação
+        await supabase
+            .from('processos_eliminacao')
+            .update({ 
+                funcionario_responsavel: funcionario,
+                boxes_eliminados: boxes_eliminated 
+            })
+            .eq('id', id);
+
+        // Gera o Documento
         const doc = new Document({
             sections: [{
                 properties: {},
                 children: [
                     new Paragraph({
+                        text: "ATA DE ELIMINAÇÃO DE DOCUMENTOS",
+                        heading: HeadingLevel.TITLE,
+                        alignment: AlignmentType.CENTER,
+                        spacing: { after: 500 },
+                    }),
+                    new Paragraph({
+                        text: `Aos ${new Date().toLocaleDateString('pt-BR')} foi realizada a eliminação dos documentos previstos na Listagem de Eliminação de Documentos nº ${planilha}, aprovada pelo Chefe do Poder Executivo, conforme edital de Ciência de Eliminação de Documentos nº ${diary_number}, publicado no Diário Oficial de ${data_diario}, páginas ${paginas}.`,
                         alignment: AlignmentType.JUSTIFIED,
-                        lineSpacing: 360, 
+                        spacing: { after: 300 },
+                    }),
+                    new Paragraph({
+                        alignment: AlignmentType.JUSTIFIED,
                         children: [
-                            new TextRun({ text: `${inicioData}, nas dependências do Arquivo Central/SEC, iniciamos o processo de eliminação/fragmentação de documentos referentes à planilha de eliminação nº ` }),
-                            new TextRun({ text: planilha, bold: true }),
-                            new TextRun({ text: `, publicada no Diário do Município, antigo Boletim do Município, nº ${diary_number} de ` }),
-                            new TextRun({ text: data_diario }),
-                            new TextRun({ text: `, páginas ` }),
-                            new TextRun({ text: paginas }),
-                            new TextRun({ text: `. A eliminação de documentos foi realizada por ` }),
+                            new TextRun({ text: `A eliminação dos documentos foi realizada por ` }),
                             new TextRun({ text: funcionario, bold: true }),
                             new TextRun({ text: `. Foram eliminados os boxes nº: ` }),
-                            new TextRun({ text: boxes_eliminated, bold: true }),
-                            new TextRun({ text: ` tendo como testemunhas as demais pessoas do setor. Sem mais.` }),
+                            new TextRun({ text: boxes_eliminated, bold: true, color: "FF0000" }),
+                            new TextRun({ text: `.` }),
                         ],
                     }),
                     new Paragraph({
                         text: "_______________________________________________",
                         alignment: AlignmentType.CENTER,
-                        spacing: { before: 1000 },
+                        spacing: { before: 1500 },
                     }),
                     new Paragraph({
                         text: funcionario,
+                        alignment: AlignmentType.CENTER,
+                        bold: true
+                    }),
+                    new Paragraph({
+                        text: "Responsável pela Eliminação",
                         alignment: AlignmentType.CENTER,
                     }),
                 ],
@@ -235,7 +127,7 @@ app.post('/processos/:id/ata-word', async (req, res) => {
         });
 
         const buffer = await Packer.toBuffer(doc);
-        res.setHeader('Content-Disposition', 'attachment; filename=Ata_Eliminacao.docx');
+        res.setHeader('Content-Disposition', `attachment; filename=Ata_Processo_${id}.docx`);
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
         res.send(buffer);
 
@@ -250,4 +142,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
-
